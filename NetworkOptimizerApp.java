@@ -1,723 +1,752 @@
+//5
+
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.util.*;
 import java.util.List;
-import java.util.PriorityQueue;
 
 public class NetworkOptimizerApp extends JFrame {
-    private JPanel graphPanel;
-    private JPanel controlPanel;
-    private JButton addNodeButton;
-    private JButton addEdgeButton;
-    private JButton optimizeButton;
-    private JButton calculatePathButton;
-    private JTextArea resultArea;
-    private JComboBox<String> algorithmSelector;
-    private JComboBox<String> sourceNodeSelector;
-    private JComboBox<String> targetNodeSelector;
+    // Data structures
+    private Map<String, Node> nodes = new HashMap<>();
+    private List<Connection> connections = new ArrayList<>();
+    private List<Connection> selectedConnections = new ArrayList<>();
 
-    private Graph networkGraph;
-    private List<Node> nodes;
-    private List<Edge> edges;
-    private List<Edge> selectedEdges;
+    // UI Components
+    private NetworkPanel networkPanel;
+    private JTextArea analysisArea;
 
-    private static final int NODE_RADIUS = 20;
+    // Current selection
     private Node selectedNode = null;
-    private Edge currentEdge = null;
+    private Connection selectedConnection = null;
 
     public NetworkOptimizerApp() {
-        setTitle("Network Topology Optimizer");
+        super("Network Topology Optimizer");
         setSize(1000, 700);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setLayout(new BorderLayout());
+        setLayout(new BorderLayout(5, 5));
 
-        networkGraph = new Graph();
-        nodes = new ArrayList<>();
-        edges = new ArrayList<>();
-        selectedEdges = new ArrayList<>();
+        // Create components
+        setupUI();
 
-        initializeUI();
-
+        setLocationRelativeTo(null);
         setVisible(true);
     }
 
-    private void initializeUI() {
-        // Graph visualization panel
-        graphPanel = new JPanel() {
-            @Override
-            protected void paintComponent(Graphics g) {
-                super.paintComponent(g);
-                Graphics2D g2d = (Graphics2D) g;
-                g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+    private void setupUI() {
+        // Create network panel
+        networkPanel = new NetworkPanel();
+        add(new JScrollPane(networkPanel), BorderLayout.CENTER);
 
-                // Draw edges
-                for (Edge edge : edges) {
-                    if (selectedEdges.contains(edge)) {
-                        g2d.setColor(Color.GREEN);
-                        g2d.setStroke(new BasicStroke(3.0f));
-                    } else {
-                        g2d.setColor(Color.GRAY);
-                        g2d.setStroke(new BasicStroke(1.5f));
-                    }
-
-                    g2d.drawLine(edge.source.x, edge.source.y, edge.destination.x, edge.destination.y);
-
-                    // Draw edge weight/cost information
-                    int midX = (edge.source.x + edge.destination.x) / 2;
-                    int midY = (edge.source.y + edge.destination.y) / 2;
-                    g2d.setColor(Color.BLACK);
-                    g2d.drawString("Cost: " + edge.cost + ", BW: " + edge.bandwidth, midX, midY - 5);
-                }
-
-                // Draw nodes
-                for (Node node : nodes) {
-                    if (node.type.equals("Server")) {
-                        g2d.setColor(Color.RED);
-                    } else { // Client
-                        g2d.setColor(Color.BLUE);
-                    }
-
-                    g2d.fillOval(node.x - NODE_RADIUS, node.y - NODE_RADIUS,
-                            NODE_RADIUS * 2, NODE_RADIUS * 2);
-                    g2d.setColor(Color.WHITE);
-                    g2d.drawString(node.id, node.x - 5, node.y + 5);
-                }
-            }
-        };
-
-        graphPanel.setBackground(Color.WHITE);
-        graphPanel.addMouseListener(new GraphPanelMouseListener());
-
-        // Control panel
-        controlPanel = new JPanel();
+        // Create control panel
+        JPanel controlPanel = new JPanel();
         controlPanel.setLayout(new BoxLayout(controlPanel, BoxLayout.Y_AXIS));
+        controlPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
-        JPanel nodePanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        addNodeButton = new JButton("Add Server");
-        addNodeButton.addActionListener(e -> {
-            if (addNodeButton.getText().equals("Add Server")) {
-                addNodeButton.setText("Add Client");
-            } else {
-                addNodeButton.setText("Add Server");
-            }
-        });
-        nodePanel.add(addNodeButton);
+        // Node controls
+        JPanel nodePanel = new JPanel(new GridLayout(3, 1, 5, 5));
+        nodePanel.setBorder(BorderFactory.createTitledBorder("Node Controls"));
 
-        addEdgeButton = new JButton("Add Connection");
-        addEdgeButton.addActionListener(e -> {
-            JOptionPane.showMessageDialog(this,
-                    "Click on two nodes to create a connection between them.");
-        });
-        nodePanel.add(addEdgeButton);
+        JButton addServerBtn = new JButton("Add Server");
+        addServerBtn.addActionListener(e -> addNode("server"));
 
+        JButton addClientBtn = new JButton("Add Client");
+        addClientBtn.addActionListener(e -> addNode("client"));
+
+        JButton removeNodeBtn = new JButton("Remove Selected Node");
+        removeNodeBtn.addActionListener(e -> removeSelectedNode());
+
+        nodePanel.add(addServerBtn);
+        nodePanel.add(addClientBtn);
+        nodePanel.add(removeNodeBtn);
+
+        // Connection controls
+        JPanel connPanel = new JPanel(new GridLayout(2, 1, 5, 5));
+        connPanel.setBorder(BorderFactory.createTitledBorder("Connection Controls"));
+
+        JButton addConnBtn = new JButton("Add Connection");
+        addConnBtn.addActionListener(e -> addConnection());
+
+        JButton removeConnBtn = new JButton("Remove Connection");
+        removeConnBtn.addActionListener(e -> removeConnection());
+
+        connPanel.add(addConnBtn);
+        connPanel.add(removeConnBtn);
+
+        // Optimization controls
+        JPanel optPanel = new JPanel(new GridLayout(3, 1, 5, 5));
+        optPanel.setBorder(BorderFactory.createTitledBorder("Optimization"));
+
+        JButton mstBtn = new JButton("Minimum Cost Tree");
+        mstBtn.addActionListener(e -> optimizeMST());
+
+        JButton balancedBtn = new JButton("Balance Cost/Bandwidth");
+        balancedBtn.addActionListener(e -> optimizeBalanced());
+
+        JButton pathBtn = new JButton("Find Shortest Path");
+        pathBtn.addActionListener(e -> findShortestPath());
+
+        optPanel.add(mstBtn);
+        optPanel.add(balancedBtn);
+        optPanel.add(pathBtn);
+
+        // Add panels to control panel
         controlPanel.add(nodePanel);
+        controlPanel.add(Box.createRigidArea(new Dimension(0, 10)));
+        controlPanel.add(connPanel);
+        controlPanel.add(Box.createRigidArea(new Dimension(0, 10)));
+        controlPanel.add(optPanel);
 
-        JPanel algorithmPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        algorithmSelector = new JComboBox<>(new String[] {
-                "Minimum Spanning Tree (Prim's)",
-                "Minimum Spanning Tree (Kruskal's)",
-                "Multi-Objective Optimization",
-                "Hill Climbing Optimization"
-        });
-        algorithmPanel.add(new JLabel("Algorithm:"));
-        algorithmPanel.add(algorithmSelector);
-
-        optimizeButton = new JButton("Optimize Network");
-        optimizeButton.addActionListener(e -> optimizeNetwork());
-        algorithmPanel.add(optimizeButton);
-
-        controlPanel.add(algorithmPanel);
-
-        JPanel pathPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        sourceNodeSelector = new JComboBox<>();
-        targetNodeSelector = new JComboBox<>();
-        calculatePathButton = new JButton("Calculate Path");
-        calculatePathButton.addActionListener(e -> calculateShortestPath());
-
-        pathPanel.add(new JLabel("From:"));
-        pathPanel.add(sourceNodeSelector);
-        pathPanel.add(new JLabel("To:"));
-        pathPanel.add(targetNodeSelector);
-        pathPanel.add(calculatePathButton);
-
-        controlPanel.add(pathPanel);
-
-        // Results area
-        resultArea = new JTextArea(10, 40);
-        resultArea.setEditable(false);
-        JScrollPane scrollPane = new JScrollPane(resultArea);
+        // Add analysis area
+        analysisArea = new JTextArea(5, 30);
+        analysisArea.setEditable(false);
+        JScrollPane analysisScroll = new JScrollPane(analysisArea);
+        analysisScroll.setBorder(BorderFactory.createTitledBorder("Network Analysis"));
 
         // Add components to frame
-        add(graphPanel, BorderLayout.CENTER);
-        add(controlPanel, BorderLayout.NORTH);
-        add(scrollPane, BorderLayout.SOUTH);
+        add(controlPanel, BorderLayout.WEST);
+        add(analysisScroll, BorderLayout.SOUTH);
+
+        updateAnalysis();
     }
 
-    private void optimizeNetwork() {
-        if (nodes.size() < 2) {
-            JOptionPane.showMessageDialog(this, "Please add at least 2 nodes.");
-            return;
+    private void addNode(String type) {
+        String label = JOptionPane.showInputDialog(this,
+                "Enter label for the " + type + ":",
+                type.substring(0, 1).toUpperCase() + type.substring(1));
+
+        if (label != null && !label.trim().isEmpty()) {
+            String id = "node" + (nodes.size() + 1);
+            int x = 100 + (int) (Math.random() * (networkPanel.getWidth() - 200));
+            int y = 100 + (int) (Math.random() * (networkPanel.getHeight() - 200));
+
+            nodes.put(id, new Node(id, type, label, x, y));
+            networkPanel.repaint();
+            updateAnalysis();
         }
-
-        if (edges.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Please add connections between nodes.");
-            return;
-        }
-
-        String selectedAlgorithm = (String) algorithmSelector.getSelectedItem();
-
-        // Clear previous selection
-        selectedEdges.clear();
-
-        if (selectedAlgorithm.contains("Prim's")) {
-            selectedEdges.addAll(primMST());
-            updateResultArea("Prim's Algorithm", selectedEdges);
-        } else if (selectedAlgorithm.contains("Kruskal's")) {
-            selectedEdges.addAll(kruskalMST());
-            updateResultArea("Kruskal's Algorithm", selectedEdges);
-        } else if (selectedAlgorithm.contains("Multi-Objective")) {
-            selectedEdges.addAll(multiObjectiveOptimization());
-            updateResultArea("Multi-Objective Optimization", selectedEdges);
-        } else if (selectedAlgorithm.contains("Hill Climbing")) {
-            selectedEdges.addAll(hillClimbingOptimization());
-            updateResultArea("Hill Climbing Optimization", selectedEdges);
-        }
-
-        graphPanel.repaint();
     }
 
-    private void calculateShortestPath() {
-        if (sourceNodeSelector.getSelectedItem() == null ||
-                targetNodeSelector.getSelectedItem() == null) {
-            JOptionPane.showMessageDialog(this, "Please select source and target nodes.");
-            return;
-        }
+    private void removeSelectedNode() {
+        if (selectedNode != null) {
+            // Remove connections to this node
+            connections.removeIf(c -> c.source.equals(selectedNode.id) || c.target.equals(selectedNode.id));
+            selectedConnections.removeIf(c -> c.source.equals(selectedNode.id) || c.target.equals(selectedNode.id));
 
-        String sourceId = (String) sourceNodeSelector.getSelectedItem();
-        String targetId = (String) targetNodeSelector.getSelectedItem();
-
-        Node source = findNodeById(sourceId);
-        Node target = findNodeById(targetId);
-
-        if (source == null || target == null) {
-            return;
-        }
-
-        // Create a graph from selected edges
-        Graph tempGraph = new Graph();
-        for (Node node : nodes) {
-            tempGraph.addNode(node.id);
-        }
-
-        for (Edge edge : selectedEdges) {
-            tempGraph.addEdge(edge.source.id, edge.destination.id,
-                    1.0 / edge.bandwidth, edge.cost); // Using inverse of bandwidth as latency
-        }
-
-        Map<String, DijkstraResult> result = tempGraph.dijkstra(source.id);
-
-        if (result.get(target.id).distance == Double.MAX_VALUE) {
-            resultArea.setText("No path found between " + sourceId + " and " + targetId);
+            nodes.remove(selectedNode.id);
+            selectedNode = null;
+            networkPanel.repaint();
+            updateAnalysis();
         } else {
-            // Reconstruct path
-            List<String> path = new ArrayList<>();
-            String current = target.id;
-
-            while (current != null) {
-                path.add(0, current);
-                current = result.get(current).previousNode;
-            }
-
-            StringBuilder sb = new StringBuilder();
-            sb.append("Shortest Path from ").append(sourceId).append(" to ").append(targetId).append(":\n");
-            sb.append("Path: ").append(String.join(" -> ", path)).append("\n");
-            sb.append("Total Latency: ").append(String.format("%.2f", result.get(target.id).distance)).append("\n");
-
-            resultArea.setText(sb.toString());
+            JOptionPane.showMessageDialog(this, "Please select a node first");
         }
     }
 
-    private Node findNodeById(String id) {
-        for (Node node : nodes) {
-            if (node.id.equals(id)) {
-                return node;
+    private void addConnection() {
+        if (nodes.size() < 2) {
+            JOptionPane.showMessageDialog(this, "Need at least two nodes to create a connection");
+            return;
+        }
+
+        // Create node selection dropdowns
+        JComboBox<String> sourceBox = new JComboBox<>();
+        JComboBox<String> targetBox = new JComboBox<>();
+
+        for (Node node : nodes.values()) {
+            sourceBox.addItem(node.label + " (" + node.id + ")");
+            targetBox.addItem(node.label + " (" + node.id + ")");
+        }
+
+        JTextField costField = new JTextField("10", 5);
+        JTextField bwField = new JTextField("100", 5);
+
+        JPanel panel = new JPanel(new GridLayout(0, 2, 5, 5));
+        panel.add(new JLabel("Source:"));
+        panel.add(sourceBox);
+        panel.add(new JLabel("Target:"));
+        panel.add(targetBox);
+        panel.add(new JLabel("Cost:"));
+        panel.add(costField);
+        panel.add(new JLabel("Bandwidth:"));
+        panel.add(bwField);
+
+        int result = JOptionPane.showConfirmDialog(this, panel, "Add Connection",
+                JOptionPane.OK_CANCEL_OPTION);
+
+        if (result == JOptionPane.OK_OPTION) {
+            String sourceText = (String) sourceBox.getSelectedItem();
+            String targetText = (String) targetBox.getSelectedItem();
+
+            String sourceId = sourceText.substring(sourceText.lastIndexOf("(") + 1, sourceText.lastIndexOf(")"));
+            String targetId = targetText.substring(targetText.lastIndexOf("(") + 1, targetText.lastIndexOf(")"));
+
+            if (sourceId.equals(targetId)) {
+                JOptionPane.showMessageDialog(this, "Source and target cannot be the same");
+                return;
+            }
+
+            // Check if connection already exists
+            for (Connection c : connections) {
+                if ((c.source.equals(sourceId) && c.target.equals(targetId)) ||
+                        (c.source.equals(targetId) && c.target.equals(sourceId))) {
+                    JOptionPane.showMessageDialog(this, "This connection already exists");
+                    return;
+                }
+            }
+
+            try {
+                double cost = Double.parseDouble(costField.getText().trim());
+                double bandwidth = Double.parseDouble(bwField.getText().trim());
+
+                if (cost <= 0 || bandwidth <= 0) {
+                    throw new NumberFormatException("Values must be positive");
+                }
+
+                connections.add(new Connection(sourceId, targetId, cost, bandwidth));
+                networkPanel.repaint();
+                updateAnalysis();
+
+            } catch (NumberFormatException e) {
+                JOptionPane.showMessageDialog(this, "Please enter valid positive numbers");
             }
         }
-        return null;
     }
 
-    private List<Edge> primMST() {
-        if (nodes.isEmpty())
-            return new ArrayList<>();
+    private void removeConnection() {
+        if (selectedConnection != null) {
+            connections.remove(selectedConnection);
+            selectedConnections.remove(selectedConnection);
+            selectedConnection = null;
+            networkPanel.repaint();
+            updateAnalysis();
+        } else {
+            JOptionPane.showMessageDialog(this, "Please select a connection first");
+        }
+    }
 
-        // Implementation of Prim's algorithm
-        List<Edge> mst = new ArrayList<>();
-        Set<Node> included = new HashSet<>();
-        PriorityQueue<Edge> pq = new PriorityQueue<>(Comparator.comparingDouble(e -> e.cost));
+    private void optimizeMST() {
+        if (nodes.size() < 2 || connections.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Need at least two nodes and one connection");
+            return;
+        }
 
-        // Start with first node
-        included.add(nodes.get(0));
+        selectedConnections.clear();
 
-        // Add all edges from the first node
-        for (Edge edge : edges) {
-            if (edge.source.equals(nodes.get(0)) || edge.destination.equals(nodes.get(0))) {
-                pq.add(edge);
+        // Sort connections by cost (Kruskal's algorithm)
+        List<Connection> sortedConnections = new ArrayList<>(connections);
+        sortedConnections.sort(Comparator.comparingDouble(c -> c.cost));
+
+        // Union-find data structure for MST
+        Map<String, String> parent = new HashMap<>();
+        for (String nodeId : nodes.keySet()) {
+            parent.put(nodeId, nodeId);
+        }
+
+        // Implementation of find operation
+        class UnionFind {
+            String find(Map<String, String> parent, String node) {
+                if (!parent.get(node).equals(node)) {
+                    parent.put(node, find(parent, parent.get(node)));
+                }
+                return parent.get(node);
             }
         }
 
-        while (!pq.isEmpty() && included.size() < nodes.size()) {
-            Edge minEdge = pq.poll();
+        UnionFind uf = new UnionFind();
 
-            Node nextNode = null;
-            if (included.contains(minEdge.source) && !included.contains(minEdge.destination)) {
-                nextNode = minEdge.destination;
-            } else if (!included.contains(minEdge.source) && included.contains(minEdge.destination)) {
-                nextNode = minEdge.source;
+        // Build MST
+        for (Connection conn : sortedConnections) {
+            String rootSource = uf.find(parent, conn.source);
+            String rootTarget = uf.find(parent, conn.target);
+
+            if (!rootSource.equals(rootTarget)) {
+                // This edge is part of MST
+                selectedConnections.add(conn);
+                parent.put(rootSource, rootTarget);
+            }
+
+            // Stop when we have n-1 edges
+            if (selectedConnections.size() == nodes.size() - 1) {
+                break;
+            }
+        }
+
+        networkPanel.repaint();
+        updateAnalysis();
+    }
+
+    private void optimizeBalanced() {
+        if (nodes.size() < 2 || connections.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Need at least two nodes and one connection");
+            return;
+        }
+
+        selectedConnections.clear();
+
+        // Find max cost and bandwidth for normalization
+        double maxCost = connections.stream().mapToDouble(c -> c.cost).max().orElse(1.0);
+        double maxBandwidth = connections.stream().mapToDouble(c -> c.bandwidth).max().orElse(1.0);
+
+        // Sort by balanced metric (normalized cost - normalized bandwidth)
+        List<Connection> sortedConnections = new ArrayList<>(connections);
+        sortedConnections.sort(Comparator.comparingDouble(c -> (c.cost / maxCost) - (c.bandwidth / maxBandwidth)));
+
+        // Union-find data structure
+        Map<String, String> parent = new HashMap<>();
+        for (String nodeId : nodes.keySet()) {
+            parent.put(nodeId, nodeId);
+        }
+
+        // Implementation of find operation
+        class UnionFind {
+            String find(Map<String, String> parent, String node) {
+                if (!parent.get(node).equals(node)) {
+                    parent.put(node, find(parent, parent.get(node)));
+                }
+                return parent.get(node);
+            }
+        }
+
+        UnionFind uf = new UnionFind();
+
+        // Build balanced tree
+        for (Connection conn : sortedConnections) {
+            String rootSource = uf.find(parent, conn.source);
+            String rootTarget = uf.find(parent, conn.target);
+
+            if (!rootSource.equals(rootTarget)) {
+                selectedConnections.add(conn);
+                parent.put(rootSource, rootTarget);
+            }
+
+            if (selectedConnections.size() == nodes.size() - 1) {
+                break;
+            }
+        }
+
+        networkPanel.repaint();
+        updateAnalysis();
+    }
+
+    private void findShortestPath() {
+        if (nodes.size() < 2) {
+            JOptionPane.showMessageDialog(this, "Need at least two nodes to find a path");
+            return;
+        }
+
+        // Source and target selection
+        JComboBox<String> sourceBox = new JComboBox<>();
+        JComboBox<String> targetBox = new JComboBox<>();
+
+        for (Node node : nodes.values()) {
+            sourceBox.addItem(node.label + " (" + node.id + ")");
+            targetBox.addItem(node.label + " (" + node.id + ")");
+        }
+
+        JPanel panel = new JPanel(new GridLayout(0, 2, 5, 5));
+        panel.add(new JLabel("Source:"));
+        panel.add(sourceBox);
+        panel.add(new JLabel("Target:"));
+        panel.add(targetBox);
+
+        int result = JOptionPane.showConfirmDialog(this, panel, "Find Shortest Path",
+                JOptionPane.OK_CANCEL_OPTION);
+
+        if (result == JOptionPane.OK_OPTION) {
+            String sourceText = (String) sourceBox.getSelectedItem();
+            String targetText = (String) targetBox.getSelectedItem();
+
+            String sourceId = sourceText.substring(sourceText.lastIndexOf("(") + 1, sourceText.lastIndexOf(")"));
+            String targetId = targetText.substring(targetText.lastIndexOf("(") + 1, targetText.lastIndexOf(")"));
+
+            if (sourceId.equals(targetId)) {
+                JOptionPane.showMessageDialog(this, "Source and target cannot be the same");
+                return;
+            }
+
+            // Use Dijkstra's algorithm
+            List<Connection> path = findDijkstraPath(sourceId, targetId);
+
+            if (path.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "No path exists between these nodes");
             } else {
-                // Both nodes are already included, skip this edge
+                // Highlight path
+                networkPanel.setHighlightedPath(path);
+
+                // Calculate metrics
+                double totalCost = 0;
+                double totalLatency = 0;
+
+                for (Connection conn : path) {
+                    totalCost += conn.cost;
+                    totalLatency += 1.0 / conn.bandwidth;
+                }
+
+                StringBuilder sb = new StringBuilder();
+                sb.append("Path from ").append(nodes.get(sourceId).label)
+                        .append(" to ").append(nodes.get(targetId).label)
+                        .append(":\n");
+
+                // Build path description
+                String currentNode = sourceId;
+                sb.append(nodes.get(currentNode).label);
+
+                for (Connection conn : path) {
+                    String nextNode = conn.source.equals(currentNode) ? conn.target : conn.source;
+                    sb.append(" → ").append(nodes.get(nextNode).label);
+                    currentNode = nextNode;
+                }
+
+                sb.append("\nTotal cost: ").append(String.format("%.2f", totalCost));
+                sb.append("\nEstimated latency: ").append(String.format("%.4f", totalLatency));
+
+                JOptionPane.showMessageDialog(this, sb.toString(), "Path Analysis",
+                        JOptionPane.INFORMATION_MESSAGE);
+            }
+        }
+    }
+
+    private List<Connection> findDijkstraPath(String sourceId, String targetId) {
+        // Prepare adjacency list
+        Map<String, Map<String, Connection>> graph = new HashMap<>();
+        for (String nodeId : nodes.keySet()) {
+            graph.put(nodeId, new HashMap<>());
+        }
+
+        // Add connections (use selected connections if available, otherwise all)
+        List<Connection> connsToUse = selectedConnections.isEmpty() ? connections : selectedConnections;
+
+        for (Connection conn : connsToUse) {
+            // Use bidirectional connections
+            graph.get(conn.source).put(conn.target, conn);
+            graph.get(conn.target).put(conn.source, conn);
+        }
+
+        // Dijkstra's algorithm
+        Map<String, Double> dist = new HashMap<>();
+        Map<String, String> prev = new HashMap<>();
+        Map<String, Connection> prevConn = new HashMap<>();
+        PriorityQueue<NodeDist> queue = new PriorityQueue<>(
+                Comparator.comparingDouble(nd -> nd.distance));
+
+        // Initialize
+        for (String nodeId : nodes.keySet()) {
+            dist.put(nodeId, Double.POSITIVE_INFINITY);
+        }
+
+        dist.put(sourceId, 0.0);
+        queue.add(new NodeDist(sourceId, 0.0));
+
+        while (!queue.isEmpty()) {
+            NodeDist current = queue.poll();
+            String u = current.nodeId;
+
+            // Target reached
+            if (u.equals(targetId)) {
+                break;
+            }
+
+            // Skip if better path already found
+            if (current.distance > dist.get(u)) {
                 continue;
             }
 
-            // Add the next node to included set
-            included.add(nextNode);
-            mst.add(minEdge);
+            // Check neighbors
+            for (Map.Entry<String, Connection> neighbor : graph.get(u).entrySet()) {
+                String v = neighbor.getKey();
+                Connection conn = neighbor.getValue();
 
-            // Add all edges connected to the next node
-            for (Edge edge : edges) {
-                if ((edge.source.equals(nextNode) && !included.contains(edge.destination)) ||
-                        (edge.destination.equals(nextNode) && !included.contains(edge.source))) {
-                    pq.add(edge);
+                // Use inverse bandwidth as weight for latency
+                double weight = 1.0 / conn.bandwidth;
+
+                double alt = dist.get(u) + weight;
+                if (alt < dist.get(v)) {
+                    dist.put(v, alt);
+                    prev.put(v, u);
+                    prevConn.put(v, conn);
+                    queue.add(new NodeDist(v, alt));
                 }
             }
         }
 
-        return mst;
+        // Build path
+        List<Connection> path = new ArrayList<>();
+        String current = targetId;
+
+        if (prev.get(current) == null) {
+            // No path exists
+            return path;
+        }
+
+        while (!current.equals(sourceId)) {
+            String previous = prev.get(current);
+            path.add(0, prevConn.get(current));
+            current = previous;
+        }
+
+        return path;
     }
 
-    private List<Edge> kruskalMST() {
-        List<Edge> mst = new ArrayList<>();
-
-        // Implementation of Kruskal's algorithm
-        DisjointSet ds = new DisjointSet(nodes.size());
-        Map<Node, Integer> nodeIndices = new HashMap<>();
-
-        // Assign indices to nodes
-        for (int i = 0; i < nodes.size(); i++) {
-            nodeIndices.put(nodes.get(i), i);
-        }
-
-        // Sort edges by cost
-        List<Edge> sortedEdges = new ArrayList<>(edges);
-        sortedEdges.sort(Comparator.comparingDouble(e -> e.cost));
-
-        for (Edge edge : sortedEdges) {
-            int sourceIdx = nodeIndices.get(edge.source);
-            int destIdx = nodeIndices.get(edge.destination);
-
-            if (ds.find(sourceIdx) != ds.find(destIdx)) {
-                mst.add(edge);
-                ds.union(sourceIdx, destIdx);
-            }
-
-            if (mst.size() == nodes.size() - 1) {
-                break; // MST is complete
-            }
-        }
-
-        return mst;
-    }
-
-    private List<Edge> multiObjectiveOptimization() {
-        // A balanced optimization approach considering both cost and bandwidth
-        List<Edge> selectedEdges = new ArrayList<>();
-
-        // Create a weighted score for each edge: lower is better
-        Map<Edge, Double> scores = new HashMap<>();
-        double maxCost = edges.stream().mapToDouble(e -> e.cost).max().orElse(1.0);
-        double maxBandwidth = edges.stream().mapToDouble(e -> e.bandwidth).max().orElse(1.0);
-
-        for (Edge edge : edges) {
-            // Normalize factors between 0 and 1 - lower score is better
-            double normalizedCost = edge.cost / maxCost;
-            double normalizedBandwidth = 1.0 - (edge.bandwidth / maxBandwidth); // Invert because higher bandwidth is
-                                                                                // better
-
-            // Combined score with equal weights (can be adjusted)
-            double score = 0.5 * normalizedCost + 0.5 * normalizedBandwidth;
-            scores.put(edge, score);
-        }
-
-        // Run Kruskal's with the custom scores
-        DisjointSet ds = new DisjointSet(nodes.size());
-        Map<Node, Integer> nodeIndices = new HashMap<>();
-
-        // Assign indices to nodes
-        for (int i = 0; i < nodes.size(); i++) {
-            nodeIndices.put(nodes.get(i), i);
-        }
-
-        // Sort edges by the combined score
-        List<Edge> sortedEdges = new ArrayList<>(edges);
-        sortedEdges.sort(Comparator.comparingDouble(scores::get));
-
-        for (Edge edge : sortedEdges) {
-            int sourceIdx = nodeIndices.get(edge.source);
-            int destIdx = nodeIndices.get(edge.destination);
-
-            if (ds.find(sourceIdx) != ds.find(destIdx)) {
-                selectedEdges.add(edge);
-                ds.union(sourceIdx, destIdx);
-            }
-
-            if (selectedEdges.size() == nodes.size() - 1) {
-                break; // MST is complete
-            }
-        }
-
-        return selectedEdges;
-    }
-
-    private List<Edge> hillClimbingOptimization() {
-        // Start with a random solution (using Kruskal's MST)
-        List<Edge> currentSolution = kruskalMST();
-        double currentScore = evaluateSolution(currentSolution);
-
-        boolean improved = true;
-        int iterations = 0;
-        int maxIterations = 100;
-
-        while (improved && iterations < maxIterations) {
-            improved = false;
-            iterations++;
-
-            // Try replacing each edge in the solution with one that's not in the solution
-            for (Edge inEdge : currentSolution) {
-                for (Edge outEdge : edges) {
-                    if (currentSolution.contains(outEdge))
-                        continue;
-
-                    // Create a new candidate solution by swapping edges
-                    List<Edge> candidateSolution = new ArrayList<>(currentSolution);
-                    candidateSolution.remove(inEdge);
-                    candidateSolution.add(outEdge);
-
-                    // Check if the candidate forms a valid spanning tree
-                    if (isValidSpanningTree(candidateSolution)) {
-                        double candidateScore = evaluateSolution(candidateSolution);
-
-                        if (candidateScore < currentScore) {
-                            currentSolution = candidateSolution;
-                            currentScore = candidateScore;
-                            improved = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (improved)
-                    break;
-            }
-        }
-
-        return currentSolution;
-    }
-
-    private boolean isValidSpanningTree(List<Edge> solution) {
-        if (solution.size() != nodes.size() - 1)
-            return false;
-
-        DisjointSet ds = new DisjointSet(nodes.size());
-        Map<Node, Integer> nodeIndices = new HashMap<>();
-
-        // Assign indices to nodes
-        for (int i = 0; i < nodes.size(); i++) {
-            nodeIndices.put(nodes.get(i), i);
-        }
-
-        // Check if the solution forms a single connected component
-        for (Edge edge : solution) {
-            int sourceIdx = nodeIndices.get(edge.source);
-            int destIdx = nodeIndices.get(edge.destination);
-            ds.union(sourceIdx, destIdx);
-        }
-
-        // Check if all nodes are in the same set
-        int root = ds.find(0);
-        for (int i = 1; i < nodes.size(); i++) {
-            if (ds.find(i) != root)
-                return false;
-        }
-
-        return true;
-    }
-
-    private double evaluateSolution(List<Edge> solution) {
-        // Evaluate a solution based on both cost and latency
-        double totalCost = solution.stream().mapToDouble(e -> e.cost).sum();
-
-        // Calculate average path length (approximation of latency)
-        double avgBandwidth = solution.stream().mapToDouble(e -> e.bandwidth).average().orElse(1.0);
-        double bandwidthPenalty = 1.0 / avgBandwidth;
-
-        // Combined score (lower is better)
-        return 0.7 * totalCost + 0.3 * bandwidthPenalty * 1000;
-    }
-
-    private void updateResultArea(String algorithm, List<Edge> selected) {
-        double totalCost = selected.stream().mapToDouble(e -> e.cost).sum();
-        double avgBandwidth = selected.stream().mapToDouble(e -> e.bandwidth).average().orElse(0);
-
+    private void updateAnalysis() {
         StringBuilder sb = new StringBuilder();
-        sb.append("Optimization Results (").append(algorithm).append("):\n");
-        sb.append("Total Network Cost: ").append(String.format("%.2f", totalCost)).append("\n");
-        sb.append("Average Bandwidth: ").append(String.format("%.2f", avgBandwidth)).append("\n");
-        sb.append("Selected Connections:\n");
 
-        for (Edge edge : selected) {
-            sb.append("- ").append(edge.source.id).append(" to ")
-                    .append(edge.destination.id).append(" (Cost: ").append(edge.cost)
-                    .append(", Bandwidth: ").append(edge.bandwidth).append(")\n");
-        }
+        // Network statistics
+        sb.append("Network Statistics:\n");
+        sb.append("Nodes: ").append(nodes.size()).append(" (");
+        long serverCount = nodes.values().stream().filter(n -> n.type.equals("server")).count();
+        sb.append(serverCount).append(" servers, ");
+        sb.append(nodes.size() - serverCount).append(" clients)\n");
+        sb.append("Connections: ").append(connections.size()).append("\n");
 
-        resultArea.setText(sb.toString());
+        // Current topology analysis
+        List<Connection> topologyConns = selectedConnections.isEmpty() ? connections : selectedConnections;
+        double totalCost = topologyConns.stream().mapToDouble(c -> c.cost).sum();
+        double avgBandwidth = topologyConns.isEmpty() ? 0
+                : topologyConns.stream().mapToDouble(c -> c.bandwidth).average().getAsDouble();
 
-        // Update node selectors
-        updateNodeSelectors();
+        sb.append("\nCurrent Topology Metrics:\n");
+        sb.append("Total cost: ").append(String.format("%.2f", totalCost)).append("\n");
+        sb.append("Average bandwidth: ").append(String.format("%.2f", avgBandwidth)).append("\n");
+
+        // Check if network is connected
+        boolean isConnected = checkConnectivity();
+        sb.append("Network is ").append(isConnected ? "connected" : "not connected");
+
+        analysisArea.setText(sb.toString());
     }
 
-    private void updateNodeSelectors() {
-        sourceNodeSelector.removeAllItems();
-        targetNodeSelector.removeAllItems();
+    private boolean checkConnectivity() {
+        if (nodes.isEmpty() || nodes.size() == 1)
+            return true;
 
-        for (Node node : nodes) {
-            sourceNodeSelector.addItem(node.id);
-            targetNodeSelector.addItem(node.id);
+        // Use BFS to check connectivity
+        List<Connection> connsToCheck = selectedConnections.isEmpty() ? connections : selectedConnections;
+
+        // Build adjacency list
+        Map<String, List<String>> adjList = new HashMap<>();
+        for (String nodeId : nodes.keySet()) {
+            adjList.put(nodeId, new ArrayList<>());
         }
+
+        for (Connection conn : connsToCheck) {
+            adjList.get(conn.source).add(conn.target);
+            adjList.get(conn.target).add(conn.source);
+        }
+
+        // BFS traversal
+        Set<String> visited = new HashSet<>();
+        Queue<String> queue = new LinkedList<>();
+
+        String startNode = nodes.keySet().iterator().next();
+        queue.add(startNode);
+        visited.add(startNode);
+
+        while (!queue.isEmpty()) {
+            String current = queue.poll();
+
+            for (String neighbor : adjList.get(current)) {
+                if (!visited.contains(neighbor)) {
+                    visited.add(neighbor);
+                    queue.add(neighbor);
+                }
+            }
+        }
+
+        return visited.size() == nodes.size();
     }
 
-    private class GraphPanelMouseListener extends MouseAdapter {
-        @Override
-        public void mouseClicked(MouseEvent e) {
-            if (addNodeButton.getText().equals("Add Server") ||
-                    addNodeButton.getText().equals("Add Client")) {
-                // Add node mode
-                String type = addNodeButton.getText().equals("Add Server") ? "Server" : "Client";
-                String id = type.substring(0, 1) + (nodes.size() + 1); // S1, S2, C1, C2, etc.
+    // Inner classes
 
-                Node newNode = new Node(id, e.getX(), e.getY(), type);
-                nodes.add(newNode);
-                networkGraph.addNode(id);
-                updateNodeSelectors();
+    private class NetworkPanel extends JPanel {
+        private List<Connection> highlightedPath;
 
-            } else if (selectedNode != null) {
-                // Adding edge between nodes
-                for (Node node : nodes) {
-                    if (isPointInNode(e.getX(), e.getY(), node) && !node.equals(selectedNode)) {
-                        // Ask for edge properties
-                        String costStr = JOptionPane.showInputDialog("Enter connection cost:");
-                        String bandwidthStr = JOptionPane.showInputDialog("Enter connection bandwidth:");
+        public NetworkPanel() {
+            setPreferredSize(new Dimension(800, 600));
+            setBackground(Color.WHITE);
 
-                        try {
-                            double cost = Double.parseDouble(costStr);
-                            double bandwidth = Double.parseDouble(bandwidthStr);
-
-                            Edge newEdge = new Edge(selectedNode, node, cost, bandwidth);
-                            edges.add(newEdge);
-                            networkGraph.addEdge(selectedNode.id, node.id, bandwidth, cost);
-
-                            selectedNode = null;
-                            break;
-                        } catch (NumberFormatException ex) {
-                            JOptionPane.showMessageDialog(NetworkOptimizerApp.this,
-                                    "Please enter valid numeric values");
+            addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseClicked(MouseEvent e) {
+                    // Check if clicked on a node
+                    for (Node node : nodes.values()) {
+                        if (distance(e.getX(), e.getY(), node.x, node.y) <= 20) {
+                            selectedNode = node;
+                            selectedConnection = null;
+                            repaint();
+                            return;
                         }
                     }
-                }
-            } else {
-                // First node selection for edge
-                for (Node node : nodes) {
-                    if (isPointInNode(e.getX(), e.getY(), node)) {
-                        selectedNode = node;
-                        break;
+
+                    // Check if clicked on a connection
+                    for (Connection conn : connections) {
+                        Node source = nodes.get(conn.source);
+                        Node target = nodes.get(conn.target);
+
+                        if (isNearLine(e.getX(), e.getY(), source.x, source.y, target.x, target.y)) {
+                            selectedConnection = conn;
+                            selectedNode = null;
+                            repaint();
+                            return;
+                        }
                     }
+
+                    // Clear selection if clicked on empty space
+                    selectedNode = null;
+                    selectedConnection = null;
+                    highlightedPath = null;
+                    repaint();
+                }
+
+                private double distance(int x1, int y1, int x2, int y2) {
+                    return Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+                }
+
+                private boolean isNearLine(int px, int py, int x1, int y1, int x2, int y2) {
+                    double lineLength = distance(x1, y1, x2, y2);
+                    if (lineLength == 0)
+                        return false;
+
+                    double t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / (lineLength * lineLength);
+                    t = Math.max(0, Math.min(1, t));
+
+                    double projX = x1 + t * (x2 - x1);
+                    double projY = y1 + t * (y2 - y1);
+
+                    return distance(px, py, (int) projX, (int) projY) <= 5;
+                }
+            });
+
+            addMouseMotionListener(new MouseMotionAdapter() {
+                @Override
+                public void mouseDragged(MouseEvent e) {
+                    if (selectedNode != null) {
+                        selectedNode.x = e.getX();
+                        selectedNode.y = e.getY();
+                        repaint();
+                    }
+                }
+            });
+        }
+
+        public void setHighlightedPath(List<Connection> path) {
+            this.highlightedPath = path;
+            repaint();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            Graphics2D g2d = (Graphics2D) g;
+            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            // Draw connections
+            for (Connection conn : connections) {
+                Node source = nodes.get(conn.source);
+                Node target = nodes.get(conn.target);
+
+                if (source != null && target != null) {
+                    boolean isSelected = selectedConnections.contains(conn) || conn == selectedConnection;
+                    boolean isHighlighted = highlightedPath != null && highlightedPath.contains(conn);
+
+                    if (isHighlighted) {
+                        g2d.setColor(Color.GREEN);
+                        g2d.setStroke(new BasicStroke(3));
+                    } else if (isSelected) {
+                        g2d.setColor(Color.BLUE);
+                        g2d.setStroke(new BasicStroke(2));
+                    } else {
+                        g2d.setColor(Color.GRAY);
+                        g2d.setStroke(new BasicStroke(1));
+                    }
+
+                    g2d.drawLine(source.x, source.y, target.x, target.y);
+
+                    // Draw connection info
+                    int midX = (source.x + target.x) / 2;
+                    int midY = (source.y + target.y) / 2;
+
+                    // Draw info background
+                    g2d.setColor(new Color(240, 240, 240, 220));
+                    g2d.fillRect(midX - 30, midY - 15, 60, 30);
+
+                    // Draw info text
+                    g2d.setColor(Color.BLACK);
+                    g2d.drawString("C:" + (int) conn.cost, midX - 25, midY);
+                    g2d.drawString("B:" + (int) conn.bandwidth, midX - 25, midY + 15);
                 }
             }
 
-            graphPanel.repaint();
+            // Draw nodes
+            for (Node node : nodes.values()) {
+                // Choose color based on type
+                if (node.type.equals("server")) {
+                    g2d.setColor(new Color(70, 130, 180)); // Steel blue for servers
+                } else {
+                    g2d.setColor(new Color(60, 179, 113)); // Medium sea green for clients
+                }
+
+                // Draw selected nodes with highlight
+                if (node == selectedNode) {
+                    g2d.setColor(g2d.getColor().brighter());
+                    g2d.fillOval(node.x - 15, node.y - 15, 30, 30);
+                    g2d.setColor(Color.BLACK);
+                    g2d.drawOval(node.x - 15, node.y - 15, 30, 30);
+                } else {
+                    g2d.fillOval(node.x - 12, node.y - 12, 24, 24);
+                }
+
+                // Draw node label
+                g2d.setColor(Color.BLACK);
+                FontMetrics fm = g2d.getFontMetrics();
+                int textWidth = fm.stringWidth(node.label);
+                g2d.drawString(node.label, node.x - textWidth / 2, node.y + 25);
+            }
         }
     }
 
-    private boolean isPointInNode(int x, int y, Node node) {
-        int dx = x - node.x;
-        int dy = y - node.y;
-        return dx * dx + dy * dy <= NODE_RADIUS * NODE_RADIUS;
-    }
-
-    // Model classes
+    // Node class
     private static class Node {
         String id;
-        int x, y;
-        String type; // "Server" or "Client"
+        String type; // "server" or "client"
+        String label;
+        int x, y; // position
 
-        Node(String id, int x, int y, String type) {
+        public Node(String id, String type, String label, int x, int y) {
             this.id = id;
+            this.type = type;
+            this.label = label;
             this.x = x;
             this.y = y;
-            this.type = type;
         }
     }
 
-    private static class Edge {
-        Node source;
-        Node destination;
+    // Connection class
+    private static class Connection {
+        String source;
+        String target;
         double cost;
         double bandwidth;
 
-        Edge(Node source, Node destination, double cost, double bandwidth) {
+        public Connection(String source, String target, double cost, double bandwidth) {
             this.source = source;
-            this.destination = destination;
+            this.target = target;
             this.cost = cost;
             this.bandwidth = bandwidth;
         }
     }
 
-    private static class Graph {
-        private Map<String, Map<String, EdgeInfo>> adjacencyMap;
-
-        Graph() {
-            adjacencyMap = new HashMap<>();
-        }
-
-        void addNode(String nodeId) {
-            adjacencyMap.putIfAbsent(nodeId, new HashMap<>());
-        }
-
-        void addEdge(String source, String destination, double bandwidth, double cost) {
-            // Ensure nodes exist
-            addNode(source);
-            addNode(destination);
-
-            // Add bidirectional edge
-            adjacencyMap.get(source).put(destination, new EdgeInfo(bandwidth, cost));
-            adjacencyMap.get(destination).put(source, new EdgeInfo(bandwidth, cost));
-        }
-
-        Map<String, DijkstraResult> dijkstra(String startNode) {
-            Map<String, DijkstraResult> results = new HashMap<>();
-            Set<String> visited = new HashSet<>();
-            PriorityQueue<DijkstraNode> pq = new PriorityQueue<>(
-                    Comparator.comparingDouble(n -> n.distance));
-
-            // Initialize distances
-            for (String nodeId : adjacencyMap.keySet()) {
-                results.put(nodeId, new DijkstraResult(
-                        nodeId.equals(startNode) ? 0 : Double.MAX_VALUE, null));
-            }
-
-            pq.add(new DijkstraNode(startNode, 0));
-
-            while (!pq.isEmpty()) {
-                DijkstraNode current = pq.poll();
-
-                if (visited.contains(current.nodeId))
-                    continue;
-                visited.add(current.nodeId);
-
-                Map<String, EdgeInfo> neighbors = adjacencyMap.get(current.nodeId);
-                for (Map.Entry<String, EdgeInfo> entry : neighbors.entrySet()) {
-                    String neighbor = entry.getKey();
-                    EdgeInfo edgeInfo = entry.getValue();
-
-                    if (visited.contains(neighbor))
-                        continue;
-
-                    // Using inverse of bandwidth as latency measure
-                    double latency = 1.0 / edgeInfo.bandwidth;
-                    double newDistance = results.get(current.nodeId).distance + latency;
-
-                    if (newDistance < results.get(neighbor).distance) {
-                        results.put(neighbor, new DijkstraResult(newDistance, current.nodeId));
-                        pq.add(new DijkstraNode(neighbor, newDistance));
-                    }
-                }
-            }
-
-            return results;
-        }
-
-        private static class EdgeInfo {
-            double bandwidth;
-            double cost;
-
-            EdgeInfo(double bandwidth, double cost) {
-                this.bandwidth = bandwidth;
-                this.cost = cost;
-            }
-        }
-
-        private static class DijkstraNode {
-            String nodeId;
-            double distance;
-
-            DijkstraNode(String nodeId, double distance) {
-                this.nodeId = nodeId;
-                this.distance = distance;
-            }
-        }
-    }
-
-    private static class DijkstraResult {
+    // Helper class for Dijkstra's algorithm
+    private static class NodeDist {
+        String nodeId;
         double distance;
-        String previousNode;
 
-        DijkstraResult(double distance, String previousNode) {
+        public NodeDist(String nodeId, double distance) {
+            this.nodeId = nodeId;
             this.distance = distance;
-            this.previousNode = previousNode;
         }
     }
 
-    private static class DisjointSet {
-        private int[] parent;
-        private int[] rank;
-
-        DisjointSet(int size) {
-            parent = new int[size];
-            rank = new int[size];
-
-            for (int i = 0; i < size; i++) {
-                parent[i] = i;
-                rank[i] = 0;
-            }
-        }
-
-        int find(int x) {
-            if (parent[x] != x) {
-                parent[x] = find(parent[x]); // Path compression
-            }
-            return parent[x];
-        }
-
-        void union(int x, int y) {
-            int rootX = find(x);
-            int rootY = find(y);
-
-            if (rootX == rootY)
-                return;
-
-            // Union by rank
-            if (rank[rootX] < rank[rootY]) {
-                parent[rootX] = rootY;
-            } else if (rank[rootX] > rank[rootY]) {
-                parent[rootY] = rootX;
-            } else {
-                parent[rootY] = rootX;
-                rank[rootX]++;
-            }
-        }
-    }
-
+    // Main method
     public static void main(String[] args) {
-        SwingUtilities.invokeLater(NetworkOptimizerApp::new);
+        SwingUtilities.invokeLater(() -> new NetworkOptimizerApp());
     }
 }

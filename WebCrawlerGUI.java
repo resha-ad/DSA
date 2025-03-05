@@ -1,133 +1,188 @@
-// import javax.swing.*;
-// import java.awt.*;
-// import java.awt.event.ActionEvent;
-// import java.awt.event.ActionListener;
-// import java.util.*;
-// import java.util.concurrent.*;
-// import java.io.IOException;
-// import org.jsoup.Jsoup;
-// import org.jsoup.nodes.Document;
-// import org.jsoup.nodes.Element;
-// import org.jsoup.select.Elements;
+//Q.no.6 b
 
-// public class WebCrawlerGUI extends JFrame {
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-//     // Thread-safe queue to store URLs to be crawled
-//     private final Queue<String> urlQueue = new ConcurrentLinkedQueue<>();
-//     // Thread-safe set to store visited URLs
-//     private final Set<String> visitedUrls = ConcurrentHashMap.newKeySet();
-//     // Thread pool for managing multiple threads
-//     private final ExecutorService executorService;
+public class WebCrawlerGUI {
 
-//     // GUI Components
-//     private JTextArea outputArea;
-//     private JTextField urlField;
-//     private JButton startButton;
+    // Pattern to extract URLs from HTML content
+    private static final Pattern URL_PATTERN = Pattern.compile(
+            "href=\"(http[s]?://[^\"]+)\"", Pattern.CASE_INSENSITIVE);
 
-//     public WebCrawlerGUI(int threadPoolSize) {
-//         this.executorService = Executors.newFixedThreadPool(threadPoolSize);
+    // Queue to store URLs with their depth
+    private final ConcurrentLinkedQueue<UrlDepthPair> urlsToCrawl;
 
-//         // Set up the GUI
-//         setTitle("Multithreaded Web Crawler");
-//         setSize(600, 400);
-//         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-//         setLayout(new BorderLayout());
+    // Set to keep track of visited URLs to avoid duplicates
+    private final Set<String> visitedUrls;
 
-//         // Input panel
-//         JPanel inputPanel = new JPanel();
-//         inputPanel.setLayout(new FlowLayout());
-//         inputPanel.add(new JLabel("Enter Seed URL:"));
-//         urlField = new JTextField(30);
-//         inputPanel.add(urlField);
-//         startButton = new JButton("Start Crawling");
-//         inputPanel.add(startButton);
+    // Map to store crawled data (URL -> content)
+    private final ConcurrentHashMap<String, String> crawledData;
 
-//         // Output area
-//         outputArea = new JTextArea();
-//         outputArea.setEditable(false);
-//         JScrollPane scrollPane = new JScrollPane(outputArea);
+    // Maximum depth to crawl
+    private final int maxDepth;
 
-//         // Add components to the frame
-//         add(inputPanel, BorderLayout.NORTH);
-//         add(scrollPane, BorderLayout.CENTER);
+    // Number of threads in the pool
+    private final int numThreads;
 
-//         // Add action listener to the start button
-//         startButton.addActionListener(new ActionListener() {
-//             @Override
-//             public void actionPerformed(ActionEvent e) {
-//                 String seedUrl = urlField.getText().trim();
-//                 if (!seedUrl.isEmpty()) {
-//                     startCrawling(Arrays.asList(seedUrl));
-//                 } else {
-//                     outputArea.append("Please enter a valid seed URL.\n");
-//                 }
-//             }
-//         });
-//     }
+    // Static inner class to pair URL with its depth
+    private static class UrlDepthPair {
+        final String url;
+        final int depth;
 
-//     // Method to start crawling
-//     public void startCrawling(List<String> seedUrls) {
-//         // Add seed URLs to the queue
-//         urlQueue.addAll(seedUrls);
+        UrlDepthPair(String url, int depth) {
+            this.url = url;
+            this.depth = depth;
+        }
+    }
 
-//         // Submit tasks to the thread pool
-//         while (!urlQueue.isEmpty()) {
-//             String url = urlQueue.poll();
-//             if (!visitedUrls.contains(url)) {
-//                 visitedUrls.add(url);
-//                 executorService.submit(() -> crawlPage(url));
-//             }
-//         }
+    public WebCrawlerGUI(int maxDepth, int numThreads) {
+        this.urlsToCrawl = new ConcurrentLinkedQueue<>();
+        this.visitedUrls = ConcurrentHashMap.newKeySet();
+        this.crawledData = new ConcurrentHashMap<>();
+        this.maxDepth = maxDepth;
+        this.numThreads = numThreads;
+    }
 
-//         // Shutdown the thread pool after all tasks are completed
-//         executorService.shutdown();
-//         try {
-//             executorService.awaitTermination(1, TimeUnit.MINUTES);
-//         } catch (InterruptedException e) {
-//             outputArea.append("Thread pool interrupted: " + e.getMessage() + "\n");
-//         }
-//     }
+    public void startCrawling(String seedUrl) {
+        // Add the seed URL to the queue with depth 0
+        urlsToCrawl.add(new UrlDepthPair(seedUrl, 0));
 
-//     // Method to crawl a single web page
-//     private void crawlPage(String url) {
-//         try {
-//             outputArea.append("Crawling: " + url + "\n");
-//             Document document = Jsoup.connect(url).get();
+        // Create a thread pool
+        ExecutorService executor = Executors.newFixedThreadPool(numThreads);
 
-//             // Process the page content (e.g., extract data or index content)
-//             processPageContent(document);
+        System.out.println("Starting crawler with seed URL: " + seedUrl);
 
-//             // Extract links from the page and add them to the queue
-//             Elements links = document.select("a[href]");
-//             for (Element link : links) {
-//                 String nextUrl = link.absUrl("href");
-//                 if (!visitedUrls.contains(nextUrl)) {
-//                     urlQueue.add(nextUrl);
-//                 }
-//             }
-//         } catch (IOException e) {
-//             outputArea.append("Error crawling " + url + ": " + e.getMessage() + "\n");
-//         }
-//     }
+        // Continue crawling until there are no more URLs
+        while (!urlsToCrawl.isEmpty()) {
+            UrlDepthPair pair = urlsToCrawl.poll();
 
-//     // Method to process the content of a web page
-//     private void processPageContent(Document document) {
-//         // Example: Extract and print the title of the page
-//         String title = document.title();
-//         outputArea.append("Title: " + title + "\n");
+            if (pair != null && !visitedUrls.contains(pair.url)) {
+                visitedUrls.add(pair.url);
 
-//         // Example: Extract and print all paragraphs
-//         Elements paragraphs = document.select("p");
-//         for (Element paragraph : paragraphs) {
-//             outputArea.append("Paragraph: " + paragraph.text() + "\n");
-//         }
-//     }
+                // Submit a task to crawl this URL
+                final int currentDepth = pair.depth;
+                final String url = pair.url;
 
-//     public static void main(String[] args) {
-//         // Run the GUI on the Event Dispatch Thread
-//         SwingUtilities.invokeLater(() -> {
-//             WebCrawlerGUI crawlerGUI = new WebCrawlerGUI(5); // Thread pool size of 5
-//             crawlerGUI.setVisible(true);
-//         });
-//     }
-// }
+                executor.submit(() -> crawlUrl(url, currentDepth));
+            }
+        }
+
+        // Shutdown the executor and wait for all tasks to complete
+        executor.shutdown();
+        try {
+            if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
+                executor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+
+        System.out.println("Crawling completed. Visited " + visitedUrls.size() + " URLs");
+    }
+
+    private void crawlUrl(String url, int currentDepth) {
+        try {
+            System.out.println("Crawling URL: " + url + " at depth: " + currentDepth);
+
+            // Fetch the web page content
+            String content = fetchWebPage(url);
+
+            // Store the crawled data
+            crawledData.put(url, content);
+
+            // Extract URLs from the content if we haven't reached the maximum depth
+            if (currentDepth < maxDepth - 1) {
+                Set<String> extractedUrls = extractUrls(content);
+
+                // Add new URLs to the queue with incremented depth
+                for (String extractedUrl : extractedUrls) {
+                    if (!visitedUrls.contains(extractedUrl)) {
+                        urlsToCrawl.add(new UrlDepthPair(extractedUrl, currentDepth + 1));
+                    }
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("Error crawling URL: " + url + " - " + e.getMessage());
+        }
+    }
+
+    private String fetchWebPage(String urlString) throws IOException {
+        URL url = new URL(urlString);
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        connection.setRequestMethod("GET");
+
+        // Set user agent to avoid being blocked by some servers
+        connection.setRequestProperty("User-Agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+
+        // Set reasonable timeouts
+        connection.setConnectTimeout(5000);
+        connection.setReadTimeout(5000);
+
+        int responseCode = connection.getResponseCode();
+
+        if (responseCode == HttpURLConnection.HTTP_OK) {
+            StringBuilder content = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(connection.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    content.append(line).append("\n");
+                }
+            }
+            return content.toString();
+        } else {
+            throw new IOException("HTTP error code: " + responseCode);
+        }
+    }
+
+    private Set<String> extractUrls(String content) {
+        Set<String> urls = new HashSet<>();
+        Matcher matcher = URL_PATTERN.matcher(content);
+
+        while (matcher.find()) {
+            String url = matcher.group(1);
+            urls.add(url);
+        }
+
+        return urls;
+    }
+
+    public ConcurrentHashMap<String, String> getCrawledData() {
+        return crawledData;
+    }
+
+    public static void main(String[] args) {
+        // Set the maximum depth and number of threads
+        int maxDepth = 2;
+        int numThreads = 10;
+        String seedUrl = "https://example.com";
+
+        WebCrawlerGUI crawler = new WebCrawlerGUI(maxDepth, numThreads);
+        crawler.startCrawling(seedUrl);
+
+        // Print statistics
+        ConcurrentHashMap<String, String> crawledData = crawler.getCrawledData();
+        System.out.println("Total pages crawled: " + crawledData.size());
+
+        // Print the first few characters of each page (for demo purposes)
+        crawledData.forEach((url, content) -> {
+            int previewLength = Math.min(content.length(), 100);
+            String preview = content.substring(0, previewLength).replace("\n", " ");
+            System.out.println("URL: " + url + "\nPreview: " + preview + "...\n");
+        });
+    }
+}
